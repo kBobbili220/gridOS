@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from psycopg import OperationalError
-from psycopg.errors import CheckViolation
+from psycopg.errors import CheckViolation, ForeignKeyViolation
 
 from app.database import get_connection
 from app.schemas import Battery
@@ -15,6 +15,33 @@ def get_batteries():
                 "SELECT * FROM batteries ORDER BY battery_id LIMIT 100"
             )
             return cur.fetchall()
+
+@router.delete("/{battery_id}", status_code=204)
+def delete_battery(battery_id: int):
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM batteries WHERE battery_id = %s", 
+                    (battery_id,)
+                )
+                if cur.rowcount == 0:
+                    raise HTTPException (
+                        status_code=404,
+                        detail="Battery not found"
+                    )
+    except ForeignKeyViolation:
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot delete bettery with existing telemetry"
+        )
+
+    except OperationalError:
+        raise HTTPException(
+            status_code=503,
+            detail="Database unavailable"
+        )
+
 
 @router.post("", status_code=201)
 def create_battery(battery: Battery):

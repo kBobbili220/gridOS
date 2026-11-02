@@ -1,5 +1,6 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from psycopg import OperationalError
+from pydantic import AwareDatetime
 from psycopg.errors import (
     ForeignKeyViolation,
     UniqueViolation,
@@ -16,9 +17,29 @@ def get_telemetry():
     with get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT * FROM batteries ORDER BY recorded_at LIMIT 100"
+                    "SELECT * FROM telemetry ORDER BY recorded_at LIMIT 100"
                 )
                 return cur.fetchall()
+
+@router.delete("/{battery_id}", status_code=204)
+def delete_telemetry(battery_id: int, recorded_at: AwareDatetime = Query(...)):
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM telemetry WHERE (battery_id, recorded_at) = (%s, %s)",
+                    (battery_id, recorded_at)
+                )
+                if cur.rowcount == 0:
+                    raise HTTPException(
+                        status_code=404,
+                        detail="Telemetry not found"
+                    )
+    except OperationalError:
+        raise HTTPException(
+            status_code=503,
+            detail="Database Unavailable"
+        )
 
 @router.post("", status_code=201)
 def create_telemetry(readings: list[Telemetry]):
